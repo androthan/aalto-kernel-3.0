@@ -1,0 +1,303 @@
+/* Board code for Samsung YP-GS1
+ * Jonathan Grundmann, androthan@gmail.com, 2014
+ */
+
+/*
+ * Copyright (C) 2009-2010 Texas Instruments Inc.
+ * Mikkel Christensen <mlc@ti.com>
+ * Felipe Balbi <balbi@ti.com>
+ */
+
+/* Modified from mach-omap2/board-zoom.c for Samsung Aalto Board
+ * With assistance from board-aalto.c
+ */
+
+/*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/platform_device.h>
+#include <linux/input.h>
+#include <linux/gpio.h>
+#include <linux/i2c/twl.h>
+#include <linux/memblock.h>
+#include <linux/skbuff.h>
+#include <linux/ti_wilink_st.h>
+#include <linux/wl12xx.h>
+#include <linux/wakelock.h>
+
+#include <asm/setup.h>
+#include <asm/mach-types.h>
+#include <asm/mach/arch.h>
+#include <asm/sizes.h>
+#include <plat/common.h>
+#include <plat/board.h>
+#include <plat/usb.h>
+
+#include <mach/board-aalto.h>
+
+#include "board-flash.h"
+#include "mux.h"
+#include "pm.h"
+#include "sdram-qimonda-hyb18m512160af-6.h"
+#include "omap_ion.h"
+#include "omap_ram_console.h"
+#include "omap2plus-cpufreq.h"
+#include "control.h"
+
+#define WILINK_UART_DEV_NAME            "/dev/ttyS1"
+
+#ifdef CONFIG_OMAP_RAM_CONSOLE
+#define AALTO_RAM_CONSOLE_START  PLAT_PHYS_OFFSET + 0xE000000
+#define AALTO_RAM_CONSOLE_SIZE    SZ_1M
+#endif
+
+u32 hw_revision;
+EXPORT_SYMBOL(hw_revision);
+
+static void __init aalto_init_early(void)
+{
+	omap2_init_common_infrastructure();
+	omap2_init_common_devices(hyb18m512160af6_sdrc_params, NULL);
+}
+
+/* Secure ram save size */
+static struct omap3_secure_copy_data secure_copy_data = {
+	.size = 0xF040,
+	/*60K + 64 Bytes header EMU/HS devices */
+};
+
+static void __init aalto_init_irq(void)
+{
+	omap3_secure_copy_data_set(&secure_copy_data);
+	omap_init_irq();
+}
+
+static const struct usbhs_omap_board_data usbhs_bdata __initconst = {
+	.port_mode[0]		= OMAP_USBHS_PORT_MODE_UNUSED,
+	.port_mode[1]		= OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[2]		= OMAP_USBHS_PORT_MODE_UNUSED,
+	.phy_reset		= true,
+	.reset_gpio_port[0]	= -EINVAL,
+	.reset_gpio_port[1]	= 64,
+	.reset_gpio_port[2]	= -EINVAL,
+};
+
+static int plat_kim_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	/* TODO: wait for HCI-LL sleep */
+	return 0;
+}
+static int plat_kim_resume(struct platform_device *pdev)
+{
+	return 0;
+}
+
+static struct wake_lock st_wk_lock;
+static int plat_kim_chip_asleep(void)
+{
+	wake_unlock(&st_wk_lock);
+	return 0;
+}
+
+static int plat_kim_chip_awake(void)
+{
+	wake_lock_timeout(&st_wk_lock, 5*HZ);
+	return 0;
+}
+
+/* wl127x BT, FM, GPS connectivity chip */
+struct ti_st_plat_data wilink_pdata = {
+	.nshutdown_gpio = OMAP_GPIO_BT_NRST,
+	.dev_name = WILINK_UART_DEV_NAME,
+	.flow_cntrl = 1,
+	.baud_rate = 3000000,
+	.suspend = plat_kim_suspend,
+	.resume = plat_kim_resume,
+	.chip_asleep = plat_kim_chip_asleep,
+	.chip_awake = plat_kim_chip_awake,
+};
+static struct platform_device wl127x_device = {
+	.name           = "kim",
+	.id             = -1,
+	.dev.platform_data = &wilink_pdata,
+};
+static struct platform_device btwilink_device = {
+	.name = "btwilink",
+	.id = -1,
+};
+
+static struct platform_device *aalto_devices[] __initdata = {
+	&wl127x_device,
+	&btwilink_device,
+};
+
+/* Fix to prevent VIO leakage on wl127x */
+static int wl127x_vio_leakage_fix(void)
+{
+	int ret = 0;
+
+	pr_info(" wl127x_vio_leakage_fix\n");
+
+	ret = gpio_request(OMAP_GPIO_BT_NRST, "wl127x_bten");
+	if (ret < 0) {
+		pr_err("wl127x_bten gpio_%d request fail",
+			OMAP_GPIO_BT_NRST);
+		goto fail;
+	}
+
+	gpio_direction_output(OMAP_GPIO_BT_NRST, 1);
+	mdelay(10);
+	gpio_direction_output(OMAP_GPIO_BT_NRST, 0);
+	udelay(64);
+
+	gpio_free(OMAP_GPIO_BT_NRST);
+fail:
+	return ret;
+}
+
+static struct wl12xx_platform_data aalto_wlan_data __initdata = {
+	.irq = OMAP_GPIO_IRQ(AALTO_WIFI_IRQ_GPIO),
+	.board_ref_clock = WL12XX_REFCLOCK_38,
+};
+
+int get_hw_revision(void)
+{
+	return hw_revision;
+}
+EXPORT_SYMBOL(get_hw_revision);
+
+static void aalto_wifi_init(void)
+{
+	if (wl12xx_set_platform_data(&aalto_wlan_data))
+		pr_err("Error setting wl12xx data\n");
+}
+
+#define GPIO_MSECURE_PIN_ON_HS		1	//TI Patch: MSECURE Pin mode change
+
+static int __init msecure_init(void)
+{
+	int ret = 0;
+
+	//printk("*****msecure_init++\n"); //TI Patch: MSECURE Pin mode change
+#ifdef CONFIG_RTC_DRV_TWL4030
+	/* 3430ES2.0 doesn't have msecure/gpio-22 line connected to T2 */
+	if (omap_type() == OMAP2_DEVICE_TYPE_GP || GPIO_MSECURE_PIN_ON_HS)  //TI Patch: MSECURE Pin mode change
+	{
+		void __iomem *msecure_pad_config_reg =
+		    omap_ctrl_base_get() + 0x5EC;
+		int mux_mask = 0x04;
+		u16 tmp;
+
+		printk("msecure_pin setting: GPIO  %d, %d\n", omap_type(), GPIO_MSECURE_PIN_ON_HS); //TI Patch: MSECURE Pin mode change
+
+		ret = gpio_request(OMAP_GPIO_SYS_DRM_MSECURE, "msecure");
+		if (ret < 0) {
+			printk(KERN_ERR "msecure_init: can't"
+			       "reserve GPIO:%d !\n",
+			       OMAP_GPIO_SYS_DRM_MSECURE);
+			goto out;
+		}
+		/*
+		 * TWL4030 will be in secure mode if msecure line from OMAP
+		 * is low. Make msecure line high in order to change the
+		 * TWL4030 RTC time and calender registers.
+		 */
+		tmp = __raw_readw(msecure_pad_config_reg);
+		tmp &= 0xF8;	/* To enable mux mode 03/04 = GPIO_RTC */
+		tmp |= mux_mask;	/* To enable mux mode 03/04 = GPIO_RTC */
+		__raw_writew(tmp, msecure_pad_config_reg);
+
+		gpio_direction_output(OMAP_GPIO_SYS_DRM_MSECURE, 1);
+	}
+out:	
+	//printk("*****msecure_init--\n"); //TI Patch: MSECURE Pin mode change
+#endif
+
+	return ret;
+}
+
+static struct cpuidle_params aalto_cpuidle_params[] = {
+	/* C1 */
+	{74 + 78, 152, 1},
+	/* C2 */
+	{165 + 90, 255, 0},
+	/* C3 */
+	{163 + 180, 345, 1},
+	/* C4 */
+	{2852 + 605, 3457, 0},
+	/* C5 */
+	{800 + 366, 2120, 1},
+	/* C6 */
+	{4080 + 801, 4881, 0},
+	/* C7 */
+	{4300 + 8794, 159000, 1},
+};
+
+static struct omap_cpufreq_platform_data cpufreq_pdata = {
+	.max_nominal_freq = 1000000,
+};
+
+static void __init aalto_init(void)
+{
+	aalto_mux_init();
+	omap_cpufreq_set_platform_data(&cpufreq_pdata);
+	omap3_pm_init_cpuidle(aalto_cpuidle_params);
+	aalto_mux_init_gpio_out();
+	aalto_mux_set_wakeup_gpio();
+	msecure_init();
+	usbhs_init(&usbhs_bdata);
+	aalto_wifi_init();
+	aalto_peripherals_init();
+	aalto_display_init();
+	omap_register_ion();
+	/* Added to register aalto devices */
+	platform_add_devices(aalto_devices, ARRAY_SIZE(aalto_devices));
+	wake_lock_init(&st_wk_lock, WAKE_LOCK_SUSPEND, "st_wake_lock");
+	wl127x_vio_leakage_fix();
+	aalto_cmdline_set_serialno(); //Inject serialno in commandline
+}
+
+static void __init aalto_reserve(void)
+{
+
+#ifdef CONFIG_OMAP_RAM_CONSOLE
+	omap_ram_console_init(AALTO_RAM_CONSOLE_START,
+				AALTO_RAM_CONSOLE_SIZE);
+#endif
+	/* do the static reservations first */
+	memblock_remove(OMAP3_PHYS_ADDR_SMC_MEM, PHYS_ADDR_SMC_SIZE);
+
+#ifdef CONFIG_ION_OMAP
+	omap_ion_init();
+#endif
+	omap_reserve();
+}
+
+static void __init aalto_fixup(struct machine_desc *desc,
+				    struct tag *tags, char **cmdline,
+				    struct meminfo *mi)
+{
+	mi->nr_banks = 2;
+
+	mi->bank[0].start = 0x80000000;
+	mi->bank[0].size = SZ_256M;
+
+	mi->bank[1].start = 0x90000000;
+	mi->bank[1].size = SZ_256M;
+}
+
+MACHINE_START(AALTO, "SAMSUNG AALTO BOARD")
+	.boot_params	= 0x80000100,
+	.fixup          = aalto_fixup,
+	.reserve	= aalto_reserve,
+	.map_io		= omap3_map_io,
+	.init_early	= aalto_init_early,
+	.init_irq	= aalto_init_irq,
+	.init_machine	= aalto_init,
+	.timer		= &omap_timer,
+MACHINE_END

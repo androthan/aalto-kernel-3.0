@@ -1,0 +1,39 @@
+
+
+dir /dev 755 0 0
+dir /dev/block 755 0 0
+nod /dev/block/mmcblk0 644 0 0 b 179 0
+nod /dev/block/mmcblk0p0 644 0 0 b 179 3
+nod /dev/block/mmcblk0p1 644 0 0 b 179 1
+nod /dev/block/mmcblk0p2 644 0 0 b 179 2
+nod /dev/block/mmcblk0p4 644 0 0 b 179 3
+nod /dev/block/mmcblk0p5 644 0 0 b 179 3
+nod /dev/block/mmcblk0p6 644 0 0 b 179 3
+nod /dev/block/mmcblk0p7 644 0 0 b 179 3
+nod /dev/block/mmcblk0p8 644 0 0 b 179 3
+nod /dev/block/mmcblk0p9 644 0 0 b 179 3
+nod /dev/block/mmcblk0p10 644 0 0 b 179 3
+slink /init /stage1/init 777 0 0
+dir /proc 755 0 0
+dir /sys 755 0 0
+dir /stage1 755 0 0
+dir /system 755 0 0
+dir /cache 755 0 0
+slink /stage1/cat busybox 755 0 0
+slink /stage1/cp busybox 755 0 0
+slink /stage1/cpio busybox 755 0 0
+slink /stage1/date busybox 755 0 0
+slink /stage1/dd busybox 755 0 0
+slink /stage1/echo busybox 755 0 0
+slink /stage1/grep busybox 755 0 0
+slink /stage1/insmod busybox 755 0 0
+slink /stage1/mkdir busybox 755 0 0
+slink /stage1/mount busybox 755 0 0
+slink /stage1/rm busybox 755 0 0
+slink /stage1/sh busybox 755 0 0
+slink /stage1/tail busybox 755 0 0
+slink /stage1/test busybox 755 0 0
+slink /stage1/touch busybox 755 0 0
+slink /stage1/umount busybox 755 0 0
+slink /stage1/zcat busybox 755 0 0
+dir /sys 755 0 0
