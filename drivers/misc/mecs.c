@@ -61,7 +61,7 @@ static struct file_operations ecs_ctrl_fops = {
 	.owner		= THIS_MODULE,
 	.open		= ecs_ctrl_open,
 	.release	= ecs_ctrl_release,
-	.ioctl		= ecs_ctrl_ioctl,
+	.unlocked_ioctl	= ecs_ctrl_ioctl,
 };
 
 static struct miscdevice ecs_ctrl_device = {
