@@ -58,6 +58,5 @@ obj-$(CONFIG_SUPPORT_GPS)       += gps.o
 obj-$(CONFIG_FSA9480_MICROUSB)  += fsa9480.o
 obj-$(CONFIG_SAMSUNG_PHONE_SVNET) += phone_svn/
 obj-$(CONFIG_SENSORS_PCA963X)	+= pca963x.o
-obj-$(CONFIG_TWL4030_POWEROFF)	+= twl4030-poweroff.o
 obj-$(CONFIG_SENSORS_MMC328X)	+= mmc328x.o
 obj-$(CONFIG_ECOMPASS)		+= mecs.o

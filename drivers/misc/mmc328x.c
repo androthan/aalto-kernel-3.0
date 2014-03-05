@@ -364,7 +364,7 @@ static struct file_operations mmc328x_fops = {
 	.owner		= THIS_MODULE,
 	.open		= mmc328x_open,
 	.release	= mmc328x_release,
-	.ioctl		= mmc328x_ioctl,
+	.unlocked_ioctl	= mmc328x_ioctl,
 };
 
 static struct miscdevice mmc328x_device = {
